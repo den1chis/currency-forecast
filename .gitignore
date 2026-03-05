@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# База данных
+*.db
+*.sqlite3
+
+# Переменные окружения
+.env
+
+# ML модели (тяжёлые файлы)
+app/models/saved/*.h5
+
+# Данные
+data/raw/*.csv
+data/processed/*.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

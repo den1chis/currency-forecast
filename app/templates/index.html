@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">FX</div>
+    <div>
+      <div class="logo-title">КУРСОВОЙ АНАЛИТИК</div>
+      <div class="logo-sub">Прогноз · Технический анализ</div>
+    </div>
+  </div>
+
+  <div class="pair-selector">
+    <button class="pair-btn active" onclick="switchPair(this,'USD/KZT')">USD/KZT</button>
+    <button class="pair-btn" onclick="switchPair(this,'EUR/KZT')">EUR/KZT</button>
+    <button class="pair-btn" onclick="switchPair(this,'RUB/KZT')">RUB/KZT</button>
+    <button class="pair-btn" onclick="switchPair(this,'CNY/KZT')">CNY/KZT</button>
+    <button class="pair-btn" onclick="switchPair(this,'GBP/KZT')">GBP/KZT</button>
+  </div>
+
+  <div class="status">
+    <div class="dot"></div>
+    <span id="live-time">—</span>
+    <span>· LIVE</span>
+  </div>
+</header>
+
+<main>
+  <!-- METRICS -->
+  <div class="metrics">
+    <div class="card">
+      <div class="card-label">Текущий курс</div>
+      <div class="card-value accent" id="m-rate">474.85</div>
+      <div class="card-sub">
+        <span class="badge up" id="m-day-chg">+1.23 (+0.26%)</span>
+        <span>за день</span>
+      </div>
+      <div class="card-bg-num">₸</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Прогноз +30 дней</div>
+      <div class="card-value up" id="m-forecast">489.40</div>
+      <div class="card-sub">
+        <span class="badge up" id="m-fc-chg">+14.55 (+3.07%)</span>
+        <span>прогноз</span>
+      </div>
+      <div class="card-bg-num">30</div>
+    </div>
+    <div class="card">
+      <div class="card-label">MAE (ошибка)</div>
+      <div class="card-value neutral">2.84</div>
+      <div class="card-sub">
+        <span style="color:var(--muted)">±</span>
+        <span>средняя абс. ошибка</span>
+      </div>
+      <div class="card-bg-num">Δ</div>
+    </div>
+    <div class="card">
+      <div class="card-label">R² (точность)</div>
+      <div class="card-value up">0.934</div>
+      <div class="card-sub">
+        <span class="badge up">ВЫСОКАЯ</span>
+        <span>качество модели</span>
+      </div>
+      <div class="card-bg-num">R²</div>
+    </div>
+  </div>
+
+  <!-- MAIN CHART -->
+  <div class="chart-section" style="margin-bottom:12px">
+    <div class="chart-header">
+      <div class="chart-title">История курса + Прогноз 30 дней<span class="tag-forecast">FORECAST</span></div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> История</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent2)"></div> Прогноз</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(255,107,53,0.3);height:8px;"></div> Интервал</div>
+      </div>
+    </div>
+    <canvas id="mainChart" height="100"></canvas>
+  </div>
+
+  <!-- RSI + MACD -->
+  <div class="chart-row">
+    <div class="chart-section">
+      <div class="chart-header">
+        <div class="chart-title">RSI (14)</div>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> RSI</div>
+          <div class="legend-item" style="color:var(--down);font-size:10px">─ 70</div>
+          <div class="legend-item" style="color:var(--up);font-size:10px">─ 30</div>
+        </div>
+      </div>
+      <canvas id="rsiChart" height="120"></canvas>
+    </div>
+    <div class="chart-section">
+      <div class="chart-header">
+        <div class="chart-title">MACD</div>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#00d4ff"></div> MACD</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent2)"></div> Signal</div>
+        </div>
+      </div>
+      <canvas id="macdChart" height="120"></canvas>
+    </div>
+  </div>
+
+  <!-- SMA + BOLLINGER -->
+  <div class="chart-section" style="margin-bottom:12px">
+    <div class="chart-header">
+      <div class="chart-title">SMA + Полосы Боллинджера</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Цена</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent3)"></div> SMA 20</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(127,255,92,0.3);height:8px;"></div> BB Band</div>
+      </div>
+    </div>
+    <canvas id="bollingerChart" height="90"></canvas>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-wrap">
+    <div class="chart-header">
+      <div class="chart-title">Детальный прогноз — 30 дней</div>
+      <div style="font-size:10px;color:var(--muted)">ARIMA+LSTM · Уверенность 93%</div>
+    </div>
+    <div class="scroll-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Прогноз (₸)</th>
+            <th>Изменение</th>
+            <th>Изм. %</th>
+            <th>Нижняя граница</th>
+            <th>Верхняя граница</th>
+            <th>Тренд</th>
+          </tr>
+        </thead>
+        <tbody id="forecastTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script src="{{ url_for('static', path='/js/charts.js') }}"></script>
+
+</body>
+</html>
