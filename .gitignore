@@ -19,8 +19,6 @@ venv/
 app/models/saved/*.h5
 
 # Данные
-data/raw/*.csv
-data/processed/*.csv
 
 # IDE
 .vscode/

@@ -6,6 +6,9 @@ from fastapi import APIRouter, HTTPException
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List
+from app.models.predictor import CurrencyPredictor
+from datetime import datetime, timedelta
+
 
 router = APIRouter(prefix="/api", tags=["data"])
 
@@ -140,3 +143,43 @@ async def get_current_rate(pair: str):
         "rsi": round(current['rsi'], 2) if pd.notna(current['rsi']) else None,
         "volume": int(current['volume'])
     }
+
+@router.get("/forecast/{pair}")
+async def get_forecast(pair: str, days: int = 30):
+    """
+    Получить прогноз курса на N дней вперёд
+    
+    Args:
+        pair: Валютная пара
+        days: Количество дней для прогноза (по умолчанию 30)
+    """
+    pair_normalized = normalize_pair(pair)
+    if pair_normalized not in AVAILABLE_PAIRS:
+        raise HTTPException(status_code=400, detail=f"Неизвестная пара: {pair}")
+    
+    # Только для USD/KZT пока есть модель
+    if pair_normalized != 'USD/KZT':
+        raise HTTPException(
+            status_code=501, 
+            detail=f"Прогноз для {pair_normalized} пока не реализован. Доступно только для USD/KZT"
+        )
+    
+    try:
+        # Загружаем исторические данные
+        data = load_pair_data(pair)
+        historical_prices = data['close'].values
+        
+        # Создаём предсказатель и делаем прогноз
+        predictor = CurrencyPredictor(pair_normalized)
+        forecast_result = predictor.forecast(historical_prices, days=days)
+        
+        # Добавляем даты к прогнозу
+        start_date = data.index[-1] + timedelta(days=1)
+        for i, forecast_item in enumerate(forecast_result['forecasts']):
+            forecast_date = start_date + timedelta(days=i)
+            forecast_item['date'] = forecast_date.strftime('%Y-%m-%d')
+        
+        return forecast_result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании прогноза: {str(e)}")

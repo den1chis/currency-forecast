@@ -4,46 +4,32 @@ let currentPair = 'USD/KZT';
 let charts = {};
 
 // Загрузка реальных данных из API
-// Загрузка реальных данных из API (с дефисами вместо слэшей)
 async function loadPairData(pair) {
-    try {
-      // Заменяем слэш на дефис для URL
-      const pairUrl = pair.replace('/', '-');
-      
-      const [historyRes, indicatorsRes, currentRes] = await Promise.all([
-        fetch(`${API_BASE}/history/${pairUrl}?days=90`),
-        fetch(`${API_BASE}/indicators/${pairUrl}?days=90`),
-        fetch(`${API_BASE}/current/${pairUrl}`)
-      ]);
-  
-      const history = await historyRes.json();
-      const indicators = await indicatorsRes.json();
-      const current = await currentRes.json();
-  
-      return { history, indicators, current };
-    } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
-      return null;
-    }
-  }
+  try {
+    const pairUrl = pair.replace('/', '-');
+    
+    const [historyRes, indicatorsRes, currentRes, forecastRes] = await Promise.all([
+      fetch(`${API_BASE}/history/${pairUrl}?days=90`),
+      fetch(`${API_BASE}/indicators/${pairUrl}?days=90`),
+      fetch(`${API_BASE}/current/${pairUrl}`),
+      fetch(`${API_BASE}/forecast/${pairUrl}?days=30`)
+    ]);
 
-// Генерация прогноза (пока заглушка)
-function generateForecast(lastPrice, days = 30) {
-  const forecast = [];
-  let price = lastPrice;
-  
-  for (let i = 0; i < days; i++) {
-    // Простой прогноз с малым трендом вверх
-    price = price * (1 + (Math.random() - 0.44) * 0.006 + 0.0005);
-    const spread = price * 0.012 * (1 + i * 0.05);
-    forecast.push({
-      val: price,
-      lo: price - spread,
-      hi: price + spread
-    });
+    const history = await historyRes.json();
+    const indicators = await indicatorsRes.json();
+    const current = await currentRes.json();
+    
+    // Прогноз может не быть доступен для всех пар
+    let forecast = null;
+    if (forecastRes.ok) {
+      forecast = await forecastRes.json();
+    }
+
+    return { history, indicators, current, forecast };
+  } catch (error) {
+    console.error('Ошибка загрузки данных:', error);
+    return null;
   }
-  
-  return forecast;
 }
 
 function getFutureDates(startDate, days) {
@@ -103,9 +89,31 @@ async function buildCharts(pair) {
   const histPrices = data.history.data.map(d => d.close);
   const lastPrice = histPrices[histPrices.length - 1];
   
-  // Генерируем прогноз
-  const forecast = generateForecast(lastPrice, 30);
-  const fcDates = getFutureDates(new Date(), 30);
+  // Прогноз
+  let forecast = null;
+  let fcDates = [];
+  
+  if (data.forecast && data.forecast.forecasts) {
+    forecast = data.forecast.forecasts;
+    fcDates = forecast.map(f => {
+      const date = new Date(f.date);
+      return date.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
+    });
+  } else {
+    // Заглушка если прогноз недоступен
+    fcDates = getFutureDates(new Date(), 30);
+    forecast = [];
+    let price = lastPrice;
+    for (let i = 0; i < 30; i++) {
+      price = price * (1 + (Math.random() - 0.44) * 0.006 + 0.0005);
+      const spread = price * 0.012 * (1 + i * 0.05);
+      forecast.push({
+        forecast: price,
+        lower: price - spread,
+        upper: price + spread
+      });
+    }
+  }
 
   // Уничтожаем старые графики
   Object.values(charts).forEach(c => c.destroy());
@@ -114,9 +122,9 @@ async function buildCharts(pair) {
   // MAIN CHART
   const mainLabels = [...histDates, ...fcDates];
   const histData = [...histPrices, ...Array(30).fill(null)];
-  const fcData = [...Array(histPrices.length - 1).fill(null), lastPrice, ...forecast.map(f => f.val)];
-  const fcLo = [...Array(histPrices.length - 1).fill(null), lastPrice, ...forecast.map(f => f.lo)];
-  const fcHi = [...Array(histPrices.length - 1).fill(null), lastPrice, ...forecast.map(f => f.hi)];
+  const fcData = [...Array(histPrices.length - 1).fill(null), lastPrice, ...forecast.map(f => f.forecast)];
+  const fcLo = [...Array(histPrices.length - 1).fill(null), lastPrice, ...forecast.map(f => f.lower)];
+  const fcHi = [...Array(histPrices.length - 1).fill(null), lastPrice, ...forecast.map(f => f.upper)];
 
   charts.main = new Chart(document.getElementById('mainChart'), {
     type: 'line',
@@ -150,7 +158,7 @@ async function buildCharts(pair) {
           fill: false,
         },
         {
-          label: 'Прогноз',
+          label: 'Прогноз LSTM',
           data: fcData,
           borderColor: '#ff6b35',
           borderWidth: 2,
@@ -308,7 +316,7 @@ async function buildCharts(pair) {
 
   // TABLE
   buildTable(forecast, fcDates, lastPrice);
-  updateMetrics(data.current, forecast);
+  updateMetrics(data.current, forecast, data.forecast ? data.forecast.metrics : null);
 }
 
 function buildTable(forecast, dates, lastHistVal) {
@@ -317,25 +325,26 @@ function buildTable(forecast, dates, lastHistVal) {
   let prev = lastHistVal;
   
   forecast.forEach((f, i) => {
-    const chg = f.val - prev;
+    const val = f.forecast;
+    const chg = val - prev;
     const pct = (chg / prev * 100).toFixed(2);
     const up = chg >= 0;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="td-date">${dates[i]}</td>
-      <td class="td-forecast">${f.val.toFixed(2)}</td>
+      <td class="td-forecast">${val.toFixed(2)}</td>
       <td class="td-change ${up ? 'up' : 'down'}">${up ? '+' : ''}${chg.toFixed(2)}</td>
       <td class="td-change ${up ? 'up' : 'down'}">${up ? '+' : ''}${pct}%</td>
-      <td class="td-interval">${f.lo.toFixed(2)}</td>
-      <td class="td-interval">${f.hi.toFixed(2)}</td>
+      <td class="td-interval">${f.lower.toFixed(2)}</td>
+      <td class="td-interval">${f.upper.toFixed(2)}</td>
       <td>${up ? '▲' : '▼'}</td>
     `;
     tbody.appendChild(tr);
-    prev = f.val;
+    prev = val;
   });
 }
 
-function updateMetrics(current, forecast) {
+function updateMetrics(current, forecast, realMetrics) {
   // Текущий курс
   document.getElementById('m-rate').textContent = current.rate.toFixed(2);
   
@@ -345,7 +354,7 @@ function updateMetrics(current, forecast) {
   dayEl.className = `badge ${current.day_change >= 0 ? 'up' : 'down'}`;
 
   // Прогноз на 30 дней
-  const fc30 = forecast[forecast.length - 1].val;
+  const fc30 = forecast[forecast.length - 1].forecast;
   const fcChg = fc30 - current.rate;
   const fcPct = (fcChg / current.rate * 100).toFixed(2);
 
@@ -355,6 +364,12 @@ function updateMetrics(current, forecast) {
   const fcEl = document.getElementById('m-fc-chg');
   fcEl.textContent = `${fcChg >= 0 ? '+' : ''}${fcChg.toFixed(2)} (${fcChg >= 0 ? '+' : ''}${fcPct}%)`;
   fcEl.className = `badge ${fcChg >= 0 ? 'up' : 'down'}`;
+  
+  // Обновляем метрики модели если есть реальные
+  if (realMetrics) {
+    document.querySelector('.card:nth-child(3) .card-value').textContent = realMetrics.mae.toFixed(2);
+    document.querySelector('.card:nth-child(4) .card-value').textContent = realMetrics.r2.toFixed(3);
+  }
 }
 
 function switchPair(btn, pair) {
